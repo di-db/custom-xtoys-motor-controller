@@ -7,4 +7,4 @@
 | MQTT Publish Topic: | Configurable in code |
 | MQTT Message Format: | {"channel" : &lt;&lt;channel&gt;&gt;, "speed": &lt;&lt;vibrate&gt;&gt; } |
 
-Channel `1` is Motor B, Channel `2` is Motor A, max speed is 100, min speed is 0.
+Channel `1` is Motor A, Channel `2` is Motor B, max speed is 100, min speed is 0.
