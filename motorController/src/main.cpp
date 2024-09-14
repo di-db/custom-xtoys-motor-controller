@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
 #elif defined(ESP32)
@@ -11,141 +12,82 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <WiFiClientSecure.h>
+#include <time.h>
 
-// Set your WiFi details here
-const char *ssid     = "<MY WIFI ID>";
-const char *password = "<MY WIFI PASSWORD>";
 
-const char* mqtt_server = "<MY MQTT SERVER>"; //mqtt server
-const char* mqtt_username = "<MY MQTT USERNAME>"; //mqtt Username
-const char* mqtt_password = "<MY MQTT PASSWORD>"; //mqtt password
+// WiFi settings
+const char *ssid = "MY WIFI ID";             // Replace with your WiFi name
+const char *password = "MY WIFI PASSWORD";   // Replace with your WiFi password
 
-// If your MQTT server does *NOT* listen on port 8883, change this here
-const int mqtt_port =8883;
 
-// Set this to the same value as the settings you created in XToys.
-// 
-// As an example, this could be "toys/genitals" and then you
-// create another device that has a topic of "toys/nipples", 
-// or you can be even more generic with a topic of "toy1".
-//
-// As long as the values match here and in xtoys, this should work!
-const char* xtoys_topic="<MY XTOYS MQTT TOPIC>";
+// MQTT Broker settings
+const char *mqtt_broker = "broker.emqx.io";  // EMQX broker endpoint
+const char *mqtt_topic = "MY_TOPIC";     // MQTT topic
+const char *mqtt_username = "emqx";  // MQTT username for authentication
+const char *mqtt_password = "public";  // MQTT password for authentication
+const int mqtt_port = 1883;  // MQTT port (TCP)
 
-int pulse_during_setup_state = 0;
 
-unsigned long lastMsg = 0;
+WiFiClient espClient;
+PubSubClient mqtt_client(espClient);
 
-#define MSG_BUFFER_SIZE	(50)
-char msg[MSG_BUFFER_SIZE];
 
-WiFiClientSecure espClient;   // for no secure connection use WiFiClient instead of WiFiClientSecure
-PubSubClient client(espClient);
+void connectToWiFi();
 
-// Pulse all the attachments during startup so we know the connections are working
-// without needing to check the logs.
-//
-// You wil get one pulse for each connection attempt of the WiFi
-// followed by one long, four short, and one long pulse once the
-// connection is established to the MQTT server.
-void pulse_during_setup() {
-    if (pulse_during_setup_state == 0){
-        Serial.println("Onboard LED state was LOW, switching to HIGH");
-        pulse_during_setup_state = 1;
-        analogWrite(4, 75);
-        analogWrite(5, 75);
-    }
-    else if (pulse_during_setup_state == 1) {
-        Serial.println("Onboard LED state was HIGH, switching to LOW");
-        pulse_during_setup_state = 0;
-        analogWrite(4, 0);
-        analogWrite(5, 0);
-    }
-}
-//==========================================
-void setup_wifi() {
-  delay(10);
-  Serial.print("\nConnecting to ");
-  Serial.println(ssid);
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+void connectToMQTTBroker();
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    pulse_during_setup();
-  }
-  randomSeed(micros());
-  Serial.println("\nWiFi connected\nIP address: ");
-  Serial.println(WiFi.localIP());
-  analogWrite(4, 0);
-  analogWrite(5, 0);
+
+void mqttCallback(char *topic, byte *payload, unsigned int length);
+
+
+void setup() {
+    Serial.begin(115200);
+    connectToWiFi();
+    analogWriteFreq(20000);
+    Serial.begin(9600);
+    Serial.println("Hello world!");
+    mqtt_client.setServer(mqtt_broker, mqtt_port);
+    mqtt_client.setCallback(mqttCallback);
+    connectToMQTTBroker();
 }
 
 
-//=====================================
-void reconnect() {
-  // Loop until we're reconnected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    String clientId = "ESP8266Client-";   // Create a random client ID
-    clientId += String(random(0xffff), HEX);
-    // Attempt to connect
-    if (client.connect(clientId.c_str(), mqtt_username, mqtt_password)) {
-      Serial.println("connected");
-
-      // pulse multiple times to show that WiFi is connected
-      analogWrite(4, 75);
-      analogWrite(5, 75);
-      delay(1000);
-      analogWrite(4, 0);
-      analogWrite(5, 0);
-      delay(300);
-      analogWrite(4, 75);
-      analogWrite(5, 75);
-      delay(300);
-      analogWrite(4, 0);
-      analogWrite(5, 0);
-      delay(300);
-      analogWrite(4, 75);
-      analogWrite(5, 75);
-      delay(300);
-      analogWrite(4, 0);
-      analogWrite(5, 0);
-      delay(300);
-      analogWrite(4, 75);
-      analogWrite(5, 75);
-      delay(300);
-      analogWrite(4, 0);
-      analogWrite(5, 0);
-      delay(300);
-      analogWrite(4, 75);
-      analogWrite(5, 75);
-      delay(1000);
-      analogWrite(4, 0);
-      analogWrite(5, 0);
-
-
-      client.subscribe(xtoys_topic);   // subscribe the topics here
-      //client.subscribe(command2_topic);   // subscribe the topics here
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");   // Wait 5 seconds before retrying
-      delay(5000);
+void connectToWiFi() {
+    WiFi.begin(ssid, password);
+    Serial.print("Connecting to WiFi");
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
     }
-  }
+    Serial.println("\nConnected to the WiFi network");
 }
 
-//=======================================
-// This void is called every time we have a message from the broker
 
-void callback(char* topic, byte* payload, unsigned int length) {
+void connectToMQTTBroker() {
+    while (!mqtt_client.connected()) {
+        String client_id = "esp8266-client-" + String(WiFi.macAddress());
+        Serial.printf("Connecting to MQTT Broker as %s.....\n", client_id.c_str());
+        if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
+            Serial.println("Connected to MQTT broker");
+            mqtt_client.subscribe(mqtt_topic);
+            // Publish message upon successful connection
+            mqtt_client.publish(mqtt_topic, "Hi EMQX I'm ESP8266 ^^");
+        } else {
+            Serial.print("Failed to connect to MQTT broker, rc=");
+            Serial.print(mqtt_client.state());
+            Serial.println(" try again in 5 seconds");
+            delay(5000);
+        }
+    }
+}
+
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
   StaticJsonDocument<256> doc;
   deserializeJson(doc, payload, length);
   serializeJsonPretty(doc, Serial);
-  int speed = map(doc["speed"], 0, 100, 5, 128);
+  int speed = map(doc["speed"], 0, 100, 7, 255);
   Serial.println();
   Serial.println(speed);
   Serial.println();
@@ -159,23 +101,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
       analogWrite(5, 0);
   }
 }
-//================================================ setup
-//================================================
-void setup() {
-  Serial.begin(9600);
-  while (!Serial) delay(1);
-  setup_wifi();
-
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback);
-}
 
 
-//================================================ loop
-//================================================
 void loop() {
-
-  if (!client.connected()) reconnect();
-  client.loop();
-
+    if (!mqtt_client.connected()) {
+        connectToMQTTBroker();
+    }
+    mqtt_client.loop();
 }
