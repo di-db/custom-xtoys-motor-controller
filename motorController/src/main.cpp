@@ -91,9 +91,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.println();
   Serial.println(speed);
   Serial.println();
-  if (doc["channel"] == 1) {
+  if (doc["channel"] == "B") {
       analogWrite(4, speed);
-  } else if (doc["channel"] == 2) {
+  } else if (doc["channel"] == "A") {
       analogWrite(5, speed);
   }
   else {
